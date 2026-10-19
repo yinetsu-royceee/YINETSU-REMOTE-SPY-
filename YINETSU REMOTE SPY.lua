@@ -20,7 +20,7 @@ local TPS = game:GetService("TeleportService")
 local MPS = game:GetService("MarketplaceService")
 
 local LP = PL.LocalPlayer
-local cfg = {Intro=2.4, W=1000, H=680, MinW=520, MinH=420, Path="Yinetsu_Logs/settings.json", Dir="Yinetsu_Logs"}
+local cfg = {Intro=1.5, W=1000, H=680, MinW=520, MinH=420, Path="Yinetsu_Logs/settings.json", Dir="Yinetsu_Logs"}
 
 pcall(function()
     local a = CG:FindFirstChild("YinetsuMain"); if a then a:Destroy() end
@@ -193,12 +193,19 @@ _G.__yinetsu_applyTheme = function(themeName, animate)
     return true
 end
 
+local _yinetsu_instance_count = 0
 local function create(cls, props, parent)
+    _yinetsu_instance_count = _yinetsu_instance_count + 1
+    -- Mag-pause bawat 20 elements para sumingit yung loading bar animation
+    if _yinetsu_instance_count % 20 == 0 then
+        task.wait()
+    end
     local i = Instance.new(cls)
     for k,v in pairs(props or {}) do i[k]=v end
     i.Parent = parent
     return i
 end
+
 local function corner(p,r) return create("UICorner",{CornerRadius=UDim.new(0,r or 10)},p) end
 
 local function mkStroke(p, col, thick, trans)
@@ -487,7 +494,7 @@ local LC = create("Frame",{
     Size=UDim2.new(0,440,0,290),Position=UDim2.fromScale(0.5,0.5),AnchorPoint=Vector2.new(0.5,0.5),
     BackgroundColor3=curThem.Su,BorderSizePixel=0,ZIndex=101,
 },LF)
-corner(LC,20); chromaStroke(LC); reg(LC,"BackgroundColor3",curThem.Su,false)
+corner(LC,18); chromaStroke(LC); reg(LC,"BackgroundColor3",curThem.Su,false)
 
 create("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,24,0,22),Size=UDim2.new(1,-48,0,34),Text="YINETSU",Font=Enum.Font.GothamBold,TextSize=28,TextColor3=curThem.Tx,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=102},LC)
 create("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,24,0,60),Size=UDim2.new(1,-48,0,22),Text="[REMOTE SPY]",Font=Enum.Font.Gotham,TextSize=12,TextColor3=curThem.Mu,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=102},LC)
@@ -512,7 +519,7 @@ create("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,136,0,148),Siz
 local LT = create("Frame",{Position=UDim2.new(0,24,1,-58),Size=UDim2.new(1,-48,0,12),BackgroundColor3=curThem.Sa,BorderSizePixel=0,ZIndex=102,ClipsDescendants=true},LC)
 corner(LT,6); reg(LT,"BackgroundColor3",curThem.Sa,false)
 local LB = create("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=curThem.Ac,BorderSizePixel=0,ZIndex=103},LT)
-corner(LB,6); reg(LB,"BackgroundColor3",curThem.Ac,true)
+corner(LB,6) -- Tinanggal yung reg() para tayo na mag-mano sa RGB animation sa baba
 
 local Shim = create("Frame",{Size=UDim2.new(0,80,1,0),Position=UDim2.new(0,-100,0,0),BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=0.5,BorderSizePixel=0,ZIndex=104},LT)
 create("UIGradient",{Color=ColorSequence.new(Color3.new(1,1,1)),Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(0.5,0.2),NumberSequenceKeypoint.new(1,1)})},Shim)
@@ -551,15 +558,56 @@ task.spawn(function()
     end
 end)
 
-TS:Create(LB,TweenInfo.new(cfg.Intro,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{Size=UDim2.new(1,0,1,0)}):Play()
-task.spawn(function()
-    local st = os.clock()
-    while os.clock()-st < cfg.Intro do
-        local p = math.clamp((os.clock()-st)/cfg.Intro,0,1)
-        LPct.Text = string.format("Initializing... %d%%",math.floor(p*100))
-        task.wait(0.05)
+local guiLoaded = false 
+local loadStart = os.clock()
+local loadConn
+
+loadConn = RS.RenderStepped:Connect(function(dt)
+    if not LF or not LF.Parent then
+        if loadConn then loadConn:Disconnect() end
+        return
     end
-    LPct.Text = "Ready · 100%"
+
+    local p = 0
+    if guiLoaded then
+        p = 1
+    else
+        local elementWeight = _yinetsu_instance_count * 1.5
+        local timeWeight = (os.clock() - loadStart) * 5
+        local totalWeight = elementWeight + timeWeight
+        p = 1 - (1 / (1 + (totalWeight / 100)))
+    end
+
+    if p >= 1 then
+        LPct.Text = "Ready · 100%"
+    else
+        LPct.Text = string.format("Initializing... %d%%", math.floor(p * 100))
+    end
+
+    LB.Size = UDim2.new(p, 0, 1, 0)
+
+    -- SYNCED ANIMATION: Gumagamit ng S.hue (Main GUI) para sabay sila
+    if Settings.animateColors then
+        local sh = math.sin(S.hue * math.pi * 2) * Settings.animationIntensity
+        
+        local hLB, sLB, vLB = Color3.toHSV(curThem.Ac)
+        LB.BackgroundColor3 = Color3.fromHSV((hLB + sh) % 1, sLB, vLB)
+        
+        local hLC, sLC, vLC = Color3.toHSV(curThem.Su)
+        LC.BackgroundColor3 = Color3.fromHSV((hLC + sh) % 1, sLC, vLC)
+        
+        local hLT, sLT, vLT = Color3.toHSV(curThem.Sa)
+        LT.BackgroundColor3 = Color3.fromHSV((hLT + sh) % 1, sLT, vLT)
+        
+        local hLF, sLF, vLF = Color3.toHSV(curThem.Bg)
+        LF.BackgroundColor3 = Color3.fromHSV((hLF + sh * 0.5) % 1, sLF, vLF)
+
+        for _,it in ipairs(R.chStrokes) do
+            if it.Gradient and it.Gradient.Parent then
+                it.Gradient.Rotation = (it.Gradient.Rotation + dt * 200) % 360
+            end
+        end
+    end
 end)
 
 --==============================================================
@@ -685,7 +733,7 @@ corner(Header,18); reg(Header,"BackgroundColor3",curThem.Su,false)
 R.headerCover = create("Frame",{Position=UDim2.new(0,0,1,-20),Size=UDim2.new(1,0,0,20),BackgroundColor3=curThem.Su,BorderSizePixel=0,ZIndex=2},Header)
 reg(R.headerCover,"BackgroundColor3",curThem.Su,false)
 
-create("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(0,400,0,30),Position=UDim2.new(0,26,0,14),Text="YINETSU  [REMOTE SPY]",Font=Enum.Font.GothamBold,TextSize=20,TextColor3=curThem.Tx,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,ZIndex=3},Header)
+R.titleLbl = create("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(0,300,0,30),Position=UDim2.new(0,26,0,14),Text="YINETSU  [REMOTE SPY]",Font=Enum.Font.GothamBold,TextSize=20,TextColor3=curThem.Tx,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,ZIndex=3},Header)
 
 local function getSub()
     local plat = "Mobile"
@@ -707,24 +755,27 @@ end
 create("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(0,400,0,20),Position=UDim2.new(0,26,0,48),Text=getSub(),Font=Enum.Font.Gotham,TextSize=12,TextColor3=curThem.Mu,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,ZIndex=3},Header)
 
 -- HEADER AVATAR: NO FILL anywhere. Only stroke ring + image.
-local hAvR = create("Frame",{
-    Size=UDim2.fromOffset(60,60),Position=UDim2.new(1,-500,0.5,-30),
+R.hAvR = create("Frame",{
+    Size=UDim2.fromOffset(60,60),Position=UDim2.new(0, 320, 0.5, -30),
     BackgroundTransparency=1,BorderSizePixel=0,ZIndex=3,
 },Header)
-corner(hAvR,30); chromaStroke(hAvR)
+corner(R.hAvR,30); chromaStroke(R.hAvR)
 
 local HAv = create("ImageLabel",{
     Size=UDim2.fromScale(1,1),BackgroundTransparency=1,
     Image="rbxthumb://type=AvatarHeadShot&id="..LP.UserId.."&w=420&h=420",
     ZIndex=4,
-},hAvR)
+},R.hAvR)
 corner(HAv,30)
 
 R.setHAvatar = function(img) if HAv and HAv.Parent then HAv.Image = img end end
 if S.avatarURL then HAv.Image = S.avatarURL end
 
-create("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(0,240,0,26),Position=UDim2.new(1,-428,0.5,-28),Text=LP.DisplayName,Font=Enum.Font.GothamBold,TextSize=15,TextColor3=curThem.Tx,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,ZIndex=3},Header)
-create("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(0,240,0,20),Position=UDim2.new(1,-428,0.5,2),Text="@"..LP.Name,Font=Enum.Font.Gotham,TextSize=11,TextColor3=curThem.Mu,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,ZIndex=3},Header)
+R.nameLbl = create("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(0,200,0,26),Position=UDim2.new(0, 390, 0.5, -28),Text=LP.DisplayName,Font=Enum.Font.GothamBold,TextSize=15,TextColor3=curThem.Tx,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=3},Header)
+R.atNameLbl = create("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(0,200,0,20),Position=UDim2.new(0, 390, 0.5, 2),Text="@"..LP.Name,Font=Enum.Font.Gotham,TextSize=11,TextColor3=curThem.Mu,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=3},Header)
+
+-- MAKE MAIN WINDOW DRAGGABLE
+draggable(Main, Header)
 
 --==============================================================
 -- PREMIUM BUTTON
@@ -809,9 +860,58 @@ local function pBtn(parent, text, size, pos, cb)
 end
 R.pBtn = pBtn
 
-pBtn(Header,"Hide",UDim2.new(0,60,0,36),UDim2.new(1,-76,0.5,-18),function()
-    S.min = not S.min; Main.Visible = not S.min
-end).ZIndex = 3
+R.hideBtn = pBtn(Header,"Hide",UDim2.new(0,60,0,36),UDim2.new(1,-76,0.5,-18),function()
+    S.min = not S.min
+    
+    if S.tweenSize then S.tweenSize:Cancel() end
+    if S.tweenPos then S.tweenPos:Cancel() end
+
+    local tweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+    
+    local currentPos = Main.Position
+    local currentH = Main.Size.Y.Offset 
+    local currentW = Main.Size.X.Offset
+    
+    local topEdge = currentPos.Y.Offset - (currentH / 2)
+
+    if S.min then
+        -- ================= HIDE =================
+        for _, v in ipairs(Main:GetChildren()) do
+            if v:IsA("GuiObject") and v ~= Header then v.Visible = false end
+        end
+        R.headerCover.Visible = false
+        
+        local targetH = 84
+        local targetY = topEdge + (targetH / 2)
+        
+        S.tweenSize = TS:Create(Main, tweenInfo, { Size = UDim2.new(0, currentW, 0, targetH) })
+        S.tweenPos = TS:Create(Main, tweenInfo, { Position = UDim2.new(currentPos.X.Scale, currentPos.X.Offset, currentPos.Y.Scale, targetY) })
+        
+        S.tweenSize:Play()
+        S.tweenPos:Play()
+        R.hideBtn.Text = "Show"
+        
+    else
+        -- ================= SHOW =================
+        for _, v in ipairs(Main:GetChildren()) do
+            if v:IsA("GuiObject") and v ~= Header then v.Visible = true end
+        end
+        R.headerCover.Visible = true
+        
+        local vp = workspace.CurrentCamera.ViewportSize
+        local targetW = math.clamp(vp.X-30, cfg.MinW, cfg.W)
+        local targetH = math.clamp(vp.Y-50, cfg.MinH, cfg.H)
+        local targetY = topEdge + (targetH / 2)
+        
+        S.tweenSize = TS:Create(Main, tweenInfo, { Size = UDim2.new(0, targetW, 0, targetH) })
+        S.tweenPos = TS:Create(Main, tweenInfo, { Position = UDim2.new(currentPos.X.Scale, currentPos.X.Offset, currentPos.Y.Scale, targetY) })
+        
+        S.tweenSize:Play()
+        S.tweenPos:Play()
+        R.hideBtn.Text = "Hide"
+    end
+end)
+R.hideBtn.ZIndex = 3
 --==============================================================
 -- DOTS BUTTON (⋮) — TOGGLE-ABLE QUICK ACTIONS
 --==============================================================
@@ -866,12 +966,12 @@ R.dotsBtn = pBtn(Header,"...",UDim2.new(0,40,0,36),UDim2.new(1,-136,0.5,-18),fun
     end
 
     -- ═══ QUICK ACTIONS LIST ═══
-    local qaActions = {
-        {"📁 Open Files", function() closeMenu(); if R.openFM then R.openFM() end end},
-        {"💾 Quick Save", function() closeMenu(); if R.quickSave then R.quickSave() end end},
-        {"⭐ Recent Files", function() closeMenu(); notify("Recent: WIP","info") end},
-        {"🔄 Reload Script", function() closeMenu(); notify("Reload: WIP","info") end},
-    }
+local qaActions = {
+    {"📁 Open Files", function() closeMenu(); if R.openFM then R.openFM() end end},
+    {"💾 Quick Save", function() closeMenu(); if R.quickSave then R.quickSave() end end},
+    {"⭐ Recent Files", function() closeMenu(); if R.showRecentFiles then R.showRecentFiles() end end},
+    {"🔄 Reload Script", function() closeMenu(); if R.reloadScript then R.reloadScript() end end},
+}
 
     for i,a in ipairs(qaActions) do
         local b = create("TextButton",{
@@ -936,6 +1036,462 @@ R.dotsBtn = pBtn(Header,"...",UDim2.new(0,40,0,36),UDim2.new(1,-136,0.5,-18),fun
     end)
 end)
 R.dotsBtn.ZIndex = 3
+
+--==============================================================
+-- QUICK ACTIONS: Reload Script
+--==============================================================
+R.reloadScript = function()
+    notify("🔄 Reloading script...","info")
+    if _G.addSysLog then pcall(_G.addSysLog,"Reload initiated","RELOAD") end
+    task.wait(0.5)
+    
+    -- Try to get current script source via getscriptbytecode (executor-dependent)
+    local ok, src = pcall(function()
+        if type(getscriptbytecode) == "function" and debug and debug.info then
+            -- Use debug.info to find current function
+            local s = debug.info(1, "s")
+            if s then return s end
+        end
+        return nil
+    end)
+    
+    if ok and src then
+        local fn, err = loadstring(src)
+        if fn then
+            -- Cleanup first
+            pcall(function()
+                getgenv().YinetsuUIActive = false
+                if R.stopMusic then pcall(R.stopMusic) end
+                if SG then SG:Destroy() end
+                if FUI then FUI:Destroy() end
+                for _,c in ipairs(C) do pcall(function() c:Disconnect() end) end
+            end)
+            task.wait(0.2)
+            local runOk, runErr = pcall(fn)
+            if not runOk then
+                notify("❌ Reload failed: "..tostring(runErr):sub(1,50),"error")
+            end
+            return
+        end
+    end
+    
+    -- Fallback: tell user to re-execute manually
+    notify("⚠️ Auto-reload not supported. Re-execute manually.","warn")
+    if _G.addSysLog then pcall(_G.addSysLog,"Reload not supported by executor","WARN") end
+end
+
+--==============================================================
+-- QUICK ACTIONS: Quick Save
+--==============================================================
+R.quickSave = function()
+    local ok, err = pcall(function()
+        -- Save current settings
+        Settings.theme = curName
+        saveSettings()
+        
+        -- Save current state snapshot
+        local snapPath = cfg.Dir .. "/quicksave_" .. tostring(game.GameId) .. ".json"
+        local snapshot = {
+            _savedAt = os.date("%Y-%m-%d %H:%M:%S"),
+            _gameId = tostring(game.GameId),
+            _placeId = tostring(game.PlaceId),
+            theme = curName,
+            guiScale = Settings.guiScale,
+            animationSpeed = Settings.animationSpeed,
+            animationIntensity = Settings.animationIntensity,
+            animateColors = Settings.animateColors,
+            musicVolume = Settings.musicVolume,
+            musicTracks = Settings.musicTracks,
+            musicIndex = Settings.musicIndex,
+            fly = S.fly,
+            noclip = S.noclip,
+            fullbright = S.fullbright,
+        antiFling = S.antiFling,
+        savedPos = nil, -- CFrame cannot be serialized to JSON reliably
+    }
+    writefile(snapPath, HS:JSONEncode(snapshot))
+end)
+    
+    if ok then
+        notify("💾 Quick Save: OK","success")
+        if _G.addSysLog then pcall(_G.addSysLog,"Quick Save complete","SAVE") end
+    else
+        notify("❌ Quick Save failed: "..tostring(err):sub(1,50),"error")
+    end
+end
+
+--==============================================================
+-- QUICK ACTIONS: Recent Files
+--==============================================================
+R.showRecentFiles = function()
+    -- Close existing popup
+    if R.__recentPopup and R.__recentPopup.Parent then
+        R.__recentPopup:Destroy()
+        R.__recentPopup = nil
+        return
+    end
+    
+    local popup = create("Frame",{
+        Name = "RecentFiles",
+        Size = UDim2.new(0, 340, 0, 420),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = curThem.Su,
+        BorderSizePixel = 0,
+        ZIndex = 500,
+    }, SG)
+    corner(popup, 14); chromaStroke(popup)
+    reg(popup, "BackgroundColor3", curThem.Su, false)
+    padding(popup, 14, 14, 12, 12)
+    R.__recentPopup = popup
+    
+    -- Title
+    create("TextLabel",{
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, -40, 0, 24),
+        Position = UDim2.new(0, 0, 0, 0),
+        Text = "⭐ RECENT FILES",
+        TextColor3 = curThem.Aa,
+        Font = Enum.Font.GothamBold,
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 501,
+    }, popup)
+    
+    -- Close button
+    local closeX = create("TextButton",{
+        Size = UDim2.fromOffset(28, 28),
+        Position = UDim2.new(1, -28, 0, 0),
+        BackgroundColor3 = curThem.Da,
+        BorderSizePixel = 0,
+        Text = "×",
+        TextColor3 = curThem.Tx,
+        Font = Enum.Font.GothamBold,
+        TextSize = 17,
+        AutoButtonColor = false,
+        ZIndex = 502,
+    }, popup)
+    corner(closeX, 8)
+    closeX.MouseButton1Click:Connect(function()
+        if popup and popup.Parent then popup:Destroy(); R.__recentPopup = nil end
+    end)
+    
+    -- Tabs
+    local tabRow = create("Frame",{
+        Size = UDim2.new(1, 0, 0, 30),
+        Position = UDim2.new(0, 0, 0, 32),
+        BackgroundTransparency = 1,
+        ZIndex = 501,
+    }, popup)
+    create("UIListLayout",{
+        Padding = UDim.new(0, 6),
+        FillDirection = Enum.FillDirection.Horizontal,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+    }, tabRow)
+    
+    local currentTab = "files"
+    local contentHolder = create("Frame",{
+        Size = UDim2.new(1, 0, 1, -80),
+        Position = UDim2.new(0, 0, 0, 70),
+        BackgroundColor3 = curThem.Bg,
+        BackgroundTransparency = 0.3,
+        BorderSizePixel = 0,
+        ZIndex = 501,
+    }, popup)
+    corner(contentHolder, 10); mkStroke(contentHolder, curThem.Ac, 1, 0.3)
+    padding(contentHolder, 6, 6, 6, 6)
+    
+    local scroll = create("ScrollingFrame",{
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 5,
+        ScrollBarImageColor3 = curThem.Ac,
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ZIndex = 502,
+    }, contentHolder)
+    create("UIListLayout",{
+        Padding = UDim.new(0, 4),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+    }, scroll)
+    
+    local function refreshTab()
+        for _, c in ipairs(scroll:GetChildren()) do
+            if c:IsA("TextButton") or c:IsA("TextLabel") or c:IsA("Frame") then
+                c:Destroy()
+            end
+        end
+        
+        if currentTab == "files" then
+            -- List recent saved files
+            local baseDir = cfg.Dir .. "/" .. tostring(game.GameId)
+            local raw = {}
+            pcall(function() raw = listfiles(baseDir) end)
+            
+            local files = {}
+            for _, p in ipairs(raw) do
+                local isD = false
+                pcall(function() isD = isfolder(p) end)
+                if not isD then
+                    local name = p:match("([^/\\]+)$") or p
+                    if not name:match("^%.") and name ~= "settings.json" then
+                        table.insert(files, {path = p, name = name})
+                    end
+                end
+            end
+            
+            -- Sort by modified time (or name as fallback)
+            table.sort(files, function(a,b) return a.name < b.name end)
+            
+            if #files == 0 then
+                create("TextLabel",{
+                    BackgroundTransparency = 1,
+                    Size = UDim2.new(1, 0, 0, 40),
+                    Text = "No recent files",
+                    TextColor3 = curThem.Mu,
+                    Font = Enum.Font.Gotham,
+                    TextSize = 12,
+                    TextXAlignment = Enum.TextXAlignment.Center,
+                    LayoutOrder = 1,
+                    ZIndex = 503,
+                }, scroll)
+            else
+                for i, f in ipairs(files) do
+                    if i > 30 then break end
+                    local row = create("TextButton",{
+                        Size = UDim2.new(1, 0, 0, 32),
+                        BackgroundColor3 = curThem.Sa,
+                        BorderSizePixel = 0,
+                        Text = "  📄 " .. f.name,
+                        TextColor3 = curThem.Tx,
+                        Font = Enum.Font.Gotham,
+                        TextSize = 11,
+                        TextXAlignment = Enum.TextXAlignment.Left,
+                        AutoButtonColor = false,
+                        LayoutOrder = i,
+                        ZIndex = 503,
+                    }, scroll)
+                    corner(row, 6); mkStroke(row, curThem.Ac, 1, 0.3)
+                    row.MouseButton1Click:Connect(function()
+                        local ok, content = pcall(readfile, f.path)
+                        if ok and content then
+                            pcall(function() setclipboard(content) end)
+                            notify("📋 Copied: "..f.name,"success")
+                        else
+                            notify("❌ Read failed","error")
+                        end
+                    end)
+                end
+            end
+        elseif currentTab == "search" then
+            -- List recent searches
+            local histPath = cfg.Dir .. "/history.json"
+            local hist = {}
+            if isfile(histPath) then
+                local ok, h = pcall(function() return HS:JSONDecode(readfile(histPath)) end)
+                if ok and type(h) == "table" then hist = h end
+            end
+            
+            if #hist == 0 then
+                create("TextLabel",{
+                    BackgroundTransparency = 1,
+                    Size = UDim2.new(1, 0, 0, 40),
+                    Text = "No search history",
+                    TextColor3 = curThem.Mu,
+                    Font = Enum.Font.Gotham,
+                    TextSize = 12,
+                    TextXAlignment = Enum.TextXAlignment.Center,
+                    LayoutOrder = 1,
+                    ZIndex = 503,
+                }, scroll)
+            else
+                for i = #hist, math.max(1, #hist - 20), -1 do
+                    local h = hist[i]
+                    if h then
+                        local row = create("TextButton",{
+                            Size = UDim2.new(1, 0, 0, 40),
+                            BackgroundColor3 = curThem.Sa,
+                            BorderSizePixel = 0,
+                            Text = "",
+                            AutoButtonColor = false,
+                            LayoutOrder = (1000 - i),
+                            ZIndex = 503,
+                        }, scroll)
+                        corner(row, 6); mkStroke(row, curThem.Ac, 1, 0.3)
+                        
+                        create("TextLabel",{
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, -16, 0, 18),
+                            Position = UDim2.new(0, 8, 0, 4),
+                            Text = "🔍 " .. tostring(h.query or "?"),
+                            TextColor3 = curThem.Tx,
+                            Font = Enum.Font.GothamSemibold,
+                            TextSize = 11,
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            ZIndex = 504,
+                        }, row)
+                        
+                        create("TextLabel",{
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, -16, 0, 16),
+                            Position = UDim2.new(0, 8, 0, 20),
+                            Text = tostring(h.type or "?") .. " · " .. tostring(h.count or 0) .. " results · " .. tostring(h.date or "") .. " " .. tostring(h.time or ""),
+                            TextColor3 = curThem.Mu,
+                            Font = Enum.Font.Gotham,
+                            TextSize = 9,
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            ZIndex = 504,
+                        }, row)
+                        
+                        row.MouseButton1Click:Connect(function()
+                            if R.aiInputBox then
+                                R.aiInputBox.Text = tostring(h.query or "")
+                                if R.aiSendBtn then pcall(function() R.aiSendBtn:Activate() end) end
+                            end
+                            if popup and popup.Parent then popup:Destroy(); R.__recentPopup = nil end
+                        end)
+                    end
+                end
+            end
+        elseif currentTab == "quicksave" then
+            -- Show quicksave info
+            local snapPath = cfg.Dir .. "/quicksave_" .. tostring(game.GameId) .. ".json"
+            if isfile(snapPath) then
+                local ok, data = pcall(function() return HS:JSONDecode(readfile(snapPath)) end)
+                if ok and data then
+                    local infoFrame = create("Frame",{
+                        Size = UDim2.new(1, 0, 0, 200),
+                        BackgroundTransparency = 1,
+                        LayoutOrder = 1,
+                        ZIndex = 503,
+                    }, scroll)
+                    
+                    local lines = {
+                        "💾 Quick Save Snapshot",
+                        "",
+                        "📅 Saved: " .. tostring(data._savedAt or "?"),
+                        "🎮 Place: " .. tostring(data._placeId or "?"),
+                        "🎨 Theme: " .. tostring(data.theme or "?"),
+                        "⚙️ GUI Scale: " .. tostring(data.guiScale or "?"),
+                        "🎵 Tracks: " .. #(data.musicTracks or {}),
+                        "✈️ Fly: " .. (data.fly and "ON" or "OFF"),
+                        "🚫 Noclip: " .. (data.noclip and "ON" or "OFF"),
+                        "💡 Fullbright: " .. (data.fullbright and "ON" or "OFF"),
+                    }
+                    
+                    for i, line in ipairs(lines) do
+                        create("TextLabel",{
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, 18),
+                            Position = UDim2.new(0, 0, 0, (i-1) * 18),
+                            Text = line,
+                            TextColor3 = i == 1 and curThem.Aa or curThem.Tx,
+                            Font = i == 1 and Enum.Font.GothamBold or Enum.Font.Gotham,
+                            TextSize = 11,
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            ZIndex = 504,
+                        }, infoFrame)
+                    end
+                    
+                    -- Load button
+                    local loadBtn = create("TextButton",{
+                        Size = UDim2.new(1, 0, 0, 34),
+                        Position = UDim2.new(0, 0, 0, 210),
+                        BackgroundColor3 = curThem.Sc,
+                        BorderSizePixel = 0,
+                        Text = "📂 Load Snapshot",
+                        TextColor3 = curThem.Tx,
+                        Font = Enum.Font.GothamBold,
+                        TextSize = 11,
+                        AutoButtonColor = false,
+                        LayoutOrder = 2,
+                        ZIndex = 503,
+                    }, scroll)
+                    corner(loadBtn, 6); mkStroke(loadBtn, curThem.Ac, 1.2, 0.2)
+                    loadBtn.MouseButton1Click:Connect(function()
+                        if data.theme and Themes[data.theme] then
+                            _G.__yinetsu_applyTheme(data.theme, true)
+                        end
+                        if data.guiScale then
+                            Settings.guiScale = data.guiScale
+                            if MainSC then MainSC.Scale = data.guiScale end
+                        end
+                        saveSettings()
+                        notify("✅ Snapshot loaded","success")
+                        if popup and popup.Parent then popup:Destroy(); R.__recentPopup = nil end
+                    end)
+                else
+                    create("TextLabel",{
+                        BackgroundTransparency = 1,
+                        Size = UDim2.new(1, 0, 0, 40),
+                        Text = "❌ Invalid snapshot file",
+                        TextColor3 = curThem.Da,
+                        Font = Enum.Font.Gotham,
+                        TextSize = 12,
+                        TextXAlignment = Enum.TextXAlignment.Center,
+                        LayoutOrder = 1,
+                        ZIndex = 503,
+                    }, scroll)
+                end
+            else
+                create("TextLabel",{
+                    BackgroundTransparency = 1,
+                    Size = UDim2.new(1, 0, 0, 40),
+                    Text = "No quicksave yet",
+                    TextColor3 = curThem.Mu,
+                    Font = Enum.Font.Gotham,
+                    TextSize = 12,
+                    TextXAlignment = Enum.TextXAlignment.Center,
+                    LayoutOrder = 1,
+                    ZIndex = 503,
+                }, scroll)
+            end
+        end
+    end
+    
+    -- Create tabs
+    local tabs = {
+        {"files", "📄 Files"},
+        {"search", "🔍 Searches"},
+        {"quicksave", "💾 Quicksave"},
+    }
+    
+    for i, t in ipairs(tabs) do
+        local btn = create("TextButton",{
+            Size = UDim2.new(0.32, 0, 1, 0),
+            BackgroundColor3 = (t[1] == currentTab) and curThem.Ac or curThem.Sa,
+            BorderSizePixel = 0,
+            Text = t[2],
+            TextColor3 = curThem.Tx,
+            Font = Enum.Font.GothamSemibold,
+            TextSize = 10,
+            AutoButtonColor = false,
+            LayoutOrder = i,
+            ZIndex = 502,
+        }, tabRow)
+        corner(btn, 6); mkStroke(btn, curThem.Ac, 1.2, 0.2)
+        btn.MouseButton1Click:Connect(function()
+            currentTab = t[1]
+            for _, c in ipairs(tabRow:GetChildren()) do
+                if c:IsA("TextButton") then
+                    -- Match by name attribute
+                end
+            end
+            -- Reset all tab colors
+local btnIdx = 0
+for _, child in ipairs(tabRow:GetChildren()) do
+    if child:IsA("TextButton") then
+        btnIdx = btnIdx + 1
+        child.BackgroundColor3 = (btnIdx == i) and curThem.Ac or curThem.Sa
+    end
+end
+            refreshTab()
+        end)
+    end
+    
+    refreshTab()
+end
 
 --==============================================================
 -- NAV
@@ -1069,11 +1625,13 @@ R.musicStatusLbl = label(musicP,"Status: Stopped",UDim2.new(1,0,0,20),UDim2.new(
 
 task.spawn(function()
     while getgenv().YinetsuUIActive and SG.Parent do
-        if R.musicTrackLbl and R.musicTrackLbl.Parent then
-            local t = Settings.musicTracks and Settings.musicTracks[Settings.musicIndex]
-            local id = (t and t.id) or ""
-            R.musicTrackLbl.Text = "ID: " .. (id ~= "" and id or "(none)")
-            R.musicVolLbl.Text = "Volume: " .. string.format("%.2f", Settings.musicVolume or 0.5)
+if R.musicTrackLbl and R.musicTrackLbl.Parent
+   and R.musicVolLbl and R.musicVolLbl.Parent
+   and R.musicStatusLbl and R.musicStatusLbl.Parent then
+    local t = Settings.musicTracks and Settings.musicTracks[Settings.musicIndex]
+    local id = (t and t.id) or ""
+    R.musicTrackLbl.Text = "ID: " .. (id ~= "" and id or "(none)")
+    R.musicVolLbl.Text = "Volume: " .. string.format("%.2f", Settings.musicVolume or 0.5)
             if R.musicSound then
                 if R.musicSound.IsPlaying then
                     R.musicStatusLbl.Text = "Status: ▶ Playing"
@@ -2156,6 +2714,33 @@ local cardStroke = mkStroke(card, curThem.Ac, 1.5, 0.15)
 reg(card,"BackgroundColor3",curThem.Su,false)
 padding(card, 12, 12, 8, 8)
 
+-- Multi-select overlay + checkbox (hidden by default)
+local selOverlay = create("Frame",{
+    Name = "_selOverlay",
+    Size = UDim2.fromScale(1,1),
+    BackgroundColor3 = curThem.Ac,
+    BackgroundTransparency = 0.75,
+    BorderSizePixel = 0,
+    Visible = false,
+    ZIndex = 20,
+}, card)
+corner(selOverlay, 10)
+
+local selCheckBox = create("TextLabel",{
+    Name = "_selCheck",
+    Size = UDim2.fromOffset(26, 26),
+    Position = UDim2.new(0, 8, 0, 8),
+    BackgroundColor3 = curThem.Sc,
+    BorderSizePixel = 0,
+    Text = "✓",
+    TextColor3 = Color3.new(1,1,1),
+    Font = Enum.Font.GothamBold,
+    TextSize = 16,
+    Visible = false,
+    ZIndex = 21,
+}, card)
+corner(selCheckBox, 6)
+
 -- Hover lift effect
 local cardOrigSize = card.Size
 track(card.MouseEnter:Connect(function()
@@ -2559,6 +3144,13 @@ local codeLabel = create("TextLabel",{
         end)
     end, 3)
   end
+    return { 
+        index = index, 
+        result = result, 
+        card = card,
+        overlay = selOverlay,
+        checkBox = selCheckBox
+    }
 end
 
 local function renderSearchResults(data, searchType)
@@ -2588,11 +3180,11 @@ local function renderSearchResults(data, searchType)
         TextColor3=curThem.Aa, Font=Enum.Font.GothamBold, TextSize=10,
         TextWrapped=true, TextXAlignment=Enum.TextXAlignment.Left, LayoutOrder=0}, msgFrame)
 
-    local maxCards = math.min(#data.results, 10)
-    for i = 1, maxCards do
-        local h = addResultCard(msgFrame, data.results[i], searchType, i)
-        table.insert(S.currentResultHandlers, h)
-    end
+local maxCards = math.min(#data.results, 10)
+for i = 1, maxCards do
+    local h = addResultCard(msgFrame, data.results[i], searchType, i)
+    if h then table.insert(S.currentResultHandlers, h) end
+end
 
     -- Bulk row
     local bulkRow = create("Frame",{Size=UDim2.new(1,0,0,28), BackgroundTransparency=1, LayoutOrder=999}, msgFrame)
@@ -2681,26 +3273,25 @@ local function renderSearchResults(data, searchType)
             saveSel.ZIndex = 501
 
             local cancelSel = pBtn(bar, "✖ Cancel", UDim2.new(0,90,0,32), UDim2.new(0.75,0,0.5,-16), function()
-                S.selectMode = false
-                S.selectedResults = {}
-                for _, h in ipairs(S.currentResultHandlers) do
-                    h.checkBox.Visible = false
-                    h.overlay.Visible = false
-                    h.setSelected(false)
-                end
-                R.__updateSelectBar()
-            end)
+    S.selectMode = false
+    S.selectedResults = {}
+    for _, h in ipairs(S.currentResultHandlers) do
+        if h and h.checkBox then h.checkBox.Visible = false end
+        if h and h.overlay then h.overlay.Visible = false end
+    end
+    R.__updateSelectBar()
+end)
             cancelSel.ZIndex = 501
 
             R.__selectBar = bar
             R.__selectCountLbl = countLbl
         end
 
-        -- Toggle card overlays
-        for _, h in ipairs(S.currentResultHandlers) do
-            h.overlay.Visible = S.selectMode
-            h.checkBox.Visible = S.selectMode
-        end
+-- Toggle card overlays
+for _, h in ipairs(S.currentResultHandlers) do
+    if h and h.overlay then h.overlay.Visible = S.selectMode end
+    if h and h.checkBox then h.checkBox.Visible = S.selectMode end
+end
 
         if R.__selectCountLbl then
             R.__selectCountLbl.Text = count.." selected"
@@ -2774,30 +3365,51 @@ local ACTIONS = {
             S.fly = want
             if R.bFly then R.bFly.Text = want and "Fly: ON" or "Fly: OFF" end
             if R.FlyControls then R.FlyControls.Visible = want end
-            if want then
-                local bv = hrp:FindFirstChild("YinetsuFly") or Instance.new("BodyVelocity", hrp)
-                bv.Name = "YinetsuFly"; bv.MaxForce = Vector3.new(9e9,9e9,9e9); bv.Velocity = Vector3.new(0,0,0)
-                local bg = hrp:FindFirstChild("YinetsuFlyGyro") or Instance.new("BodyGyro", hrp)
-                bg.Name = "YinetsuFlyGyro"; bg.MaxTorque = Vector3.new(9e9,9e9,9e9); bg.P = 90000; bg.D = 500; bg.CFrame = hrp.CFrame
-                if S.flyConn then S.flyConn:Disconnect() end
-                S.flyConn = RS.RenderStepped:Connect(function()
-                    if not hrp.Parent or not S.fly then return end
-                    if not bv.Parent or not bg.Parent then return end
-                    local cam = workspace.CurrentCamera; if not cam then return end
-                    bg.CFrame = cam.CFrame
-                    local mv = Vector3.new()
-                    pcall(function() mv = UIS:GetMoveVector() end)
-                    local spd = 60
-                    if R.flySpdBox then spd = tonumber(R.flySpdBox.Text) or 60 end
-                    spd = math.clamp(spd, 5, 500)
-                    local vel = Vector3.new()
-                    if mv.Magnitude > 0.05 then
-                        vel = (cam.CFrame.RightVector * mv.X) - (cam.CFrame.LookVector * mv.Z)
-                    end
-                    bv.Velocity = vel.Magnitude > 0 and (vel.Unit * spd) or Vector3.new(0,0,0)
-                end)
-                h.PlatformStand = true
-                return "✅ Fly: ON"
+if want then
+    local bv = hrp:FindFirstChild("YinetsuFly") or Instance.new("BodyVelocity", hrp)
+    bv.Name = "YinetsuFly"; bv.MaxForce = Vector3.new(9e9,9e9,9e9); bv.Velocity = Vector3.new(0,0,0)
+    local bg = hrp:FindFirstChild("YinetsuFlyGyro") or Instance.new("BodyGyro", hrp)
+    bg.Name = "YinetsuFlyGyro"; bg.MaxTorque = Vector3.new(9e9,9e9,9e9); bg.P = 90000; bg.D = 500; bg.CFrame = hrp.CFrame
+
+    -- Get ControlModule for joystick input (works with PlatformStand)
+    local cm = nil
+    pcall(function()
+        local ps = LP:FindFirstChild("PlayerScripts")
+        if ps then
+            local pm = ps:FindFirstChild("PlayerModule")
+            if pm then
+                local cmod = pm:FindFirstChild("ControlModule")
+                if cmod then cm = require(cmod) end
+            end
+        end
+    end)
+
+    if S.flyConn then S.flyConn:Disconnect() end
+    S.flyConn = RS.RenderStepped:Connect(function()
+        if not hrp.Parent or not S.fly then return end
+        if not bv.Parent or not bg.Parent then return end
+        local cam = workspace.CurrentCamera; if not cam then return end
+        bg.CFrame = cam.CFrame
+
+        local mv = Vector3.new()
+        if cm then
+            pcall(function() mv = cm:GetMoveVector() end)
+        end
+        if mv.Magnitude < 0.05 then
+            pcall(function() mv = UIS:GetMoveVector() end)
+        end
+
+        local spd = 60
+        if R.flySpdBox then spd = tonumber(R.flySpdBox.Text) or 60 end
+        spd = math.clamp(spd, 5, 500)
+        local vel = Vector3.new()
+        if mv.Magnitude > 0.05 then
+            vel = (cam.CFrame.RightVector * mv.X) - (cam.CFrame.LookVector * mv.Z)
+        end
+        bv.Velocity = vel.Magnitude > 0 and (vel.Unit * spd) or Vector3.new(0,0,0)
+    end)
+    h.PlatformStand = true
+    return "✅ Fly: ON"
             else
                 if S.flyConn then S.flyConn:Disconnect(); S.flyConn = nil end
                 local bv = hrp:FindFirstChild("YinetsuFly"); if bv then bv:Destroy() end
@@ -3211,9 +3823,10 @@ join_result = {
             pcall(_G.addSysLog, "Join #"..n.." → "..gameName.." ("..targetPlaceId..")", "TELEPORT")
         end
 
-        task.spawn(function()
-            local success = false
-            local errMsg = "unknown"
+task.delay(15, function() if S.tp then S.tp = false end end)
+task.spawn(function()
+    local success = false
+    local errMsg = "unknown"
 
             -- METHOD 1: queue_on_teleport (survives teleport)
             local qot = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
@@ -3567,9 +4180,12 @@ search_user = {
    },
 }
 
-    -- Build system prompt with action list
-    local actionSpec = "You are Yinetsu AI, assistant for the Yinetsu Remote Spy Roblox script.\n\n"
-    actionSpec = actionSpec .. "CRITICAL RULES:\n"
+_G.YinetsuActions = ACTIONS
+
+-- Build system prompt with action list
+
+local actionSpec = "You are Yinetsu AI, assistant for the Yinetsu Remote Spy Roblox script.\n\n"    
+actionSpec = actionSpec .. "CRITICAL RULES:\n"
     actionSpec = actionSpec .. "1. Detect the user's language and ALWAYS reply in the SAME language. Korean→Korean, Spanish→Spanish, Tagalog→Tagalog, Portuguese→Portuguese, Japanese→Japanese, etc.\n"
     actionSpec = actionSpec .. "2. Never default to English unless the user wrote in English.\n"
     actionSpec = actionSpec .. "3. When the user asks you to DO something, output the action tag on its own line: [ACTION:action_name:arg]\n"
@@ -3908,35 +4524,6 @@ end
         return cleaned, actions
     end
 
-local function executeActions(actions)
-local searchActions = {
-    search_music = true,
-    search_game = true,
-    search_user = true,
-    web_search = true,
-    search_script = true,
-}
-    for _, a in ipairs(actions) do
-        local handler = ACTIONS[a.name]
-        if handler then
-            local ok, res = pcall(handler.run, a.arg)
-            if ok then
-                if searchActions[a.name] and res then
-                    -- Search → display full result as chat message
-                    task.wait(0.2)
-                    addMessage("Yinetsu AI", res, false, false, true)
-                    notify("✅ Search done", "success")
-                else
-                    notify("⚡ "..(res or a.name), "success")
-                end
-            else
-                notify("Action failed: "..a.name, "error")
-            end
-        else
-            notify("Unknown action: "..a.name, "warn")
-        end
-    end
-end
 
 local function executeActions(actions)
     if #actions == 0 then return end
@@ -4548,13 +5135,11 @@ local function moveItem(srcPath, destDir)
         end
         delFolder(srcPath)
     else
-        -- Basahin muna bago i-copy
         local okRead, content = pcall(readfile, srcPath)
         if okRead and content then
-            -- I-save sa bagong path
             local okWrite = pcall(writefile, destPath, content)
-            if okWrite then
-                -- Force delete gamit ang task.spawn para hindi mag-conflict sa executor
+            -- Verify dest exists before deleting source
+            if okWrite and isfile(destPath) then
                 task.spawn(function()
                     task.wait(0.05)
                     pcall(delfile, srcPath)
@@ -7019,8 +7604,8 @@ do
 pBtn(Up,"Server Hop",UDim2.new(0.32,0,0,48),UDim2.new(0.34,0,0,96),function()
     if S.tp then return end
     R.TPStat.Text="Smart hopping..."; R.TPStat.TextColor3=curThem.Wa
-    if ACTIONS and ACTIONS.server_hop_smart then
-        local ok, res = pcall(ACTIONS.server_hop_smart.run)
+if _G.YinetsuActions and _G.YinetsuActions.server_hop_smart then
+    local ok, res = pcall(_G.YinetsuActions.server_hop_smart.run)
         R.TPStat.Text = ok and "Hop initiated" or "Hop failed"
         R.TPStat.TextColor3 = ok and curThem.Sc or curThem.Da
     else
@@ -7037,22 +7622,27 @@ end)
     label(Fp,"LOCAL FPS BOOSTER",UDim2.new(1,0,0,24),UDim2.new(),14,curThem.Aa)
     label(Fp,"Adjusts local lighting and disables post-effects.",UDim2.new(1,0,0,36),UDim2.new(0,0,0,30),12,curThem.Mu).TextWrapped=true
 
-    R.setFPSBoost = function(e)
-        if e==S.fpsBoost then return end
-        S.fpsBoost = e
-        if e then
-            S.oL.GlobalShadows=LG.GlobalShadows; S.oL.FogEnd=LG.FogEnd; S.oL.Brightness=LG.Brightness
-            for _,d in ipairs(LG:GetDescendants()) do
-                if d:IsA("PostEffect") then S.oE[d]=d.Enabled; d.Enabled=false end
+R.setFPSBoost = function(e)
+    if e==S.fpsBoost then return end
+    S.fpsBoost = e
+    if e then
+        S.oE = {}
+        S.oL.GlobalShadows=LG.GlobalShadows; S.oL.FogEnd=LG.FogEnd; S.oL.Brightness=LG.Brightness
+        for _,d in ipairs(LG:GetDescendants()) do
+            if d:IsA("PostEffect") and d.Enabled then
+                S.oE[d]=true
+                d.Enabled=false
             end
-            LG.GlobalShadows=false; LG.FogEnd=100000; LG.Brightness=math.max(LG.Brightness,2)
-            notify("FPS Boost ON","success")
-        else
-            LG.GlobalShadows=S.oL.GlobalShadows; LG.FogEnd=S.oL.FogEnd; LG.Brightness=S.oL.Brightness
-            for k,v in pairs(S.oE) do if k and k.Parent then k.Enabled=v end end
-            notify("FPS Boost OFF","info")
         end
+        LG.GlobalShadows=false; LG.FogEnd=100000; LG.Brightness=math.max(LG.Brightness,2)
+        notify("FPS Boost ON","success")
+    else
+        LG.GlobalShadows=S.oL.GlobalShadows; LG.FogEnd=S.oL.FogEnd; LG.Brightness=S.oL.Brightness
+        for k,v in pairs(S.oE) do if k and k.Parent then k.Enabled=v end end
+        S.oE = {}
+        notify("FPS Boost OFF","info")
     end
+end
 
     R.bFPS = pBtn(Fp,"Enable FPS Booster",UDim2.new(1,0,0,48),UDim2.new(0,0,0,80),function()
         R.setFPSBoost(not S.fpsBoost)
@@ -7414,13 +8004,14 @@ R.musicResetBtn.LayoutOrder = 4
             if c:IsA("Frame") then c:Destroy() end
         end
         for i, t in ipairs(Settings.musicTracks) do
-            local row = create("Frame",{
-                Size=UDim2.new(1,-4,0,42),
-                BackgroundColor3=(i == Settings.musicIndex) and curThem.Ac or curThem.Sa,
-                BorderSizePixel=0,LayoutOrder = i,
-            },R.musicListScroll)
-            corner(row,8)
-            reg(row,"BackgroundColor3",curThem.Sa,false)
+local isCurrent = (i == Settings.musicIndex)
+local row = create("Frame",{
+    Size=UDim2.new(1,-4,0,42),
+    BackgroundColor3=isCurrent and curThem.Ac or curThem.Sa,
+    BorderSizePixel=0,LayoutOrder = i,
+},R.musicListScroll)
+corner(row,8)
+reg(row,"BackgroundColor3", isCurrent and curThem.Ac or curThem.Sa, false) -- Naka-base na sa tamang kulay
 
             local num = create("TextLabel",{
                 BackgroundTransparency=1,Size=UDim2.fromOffset(28,42),
@@ -7463,8 +8054,8 @@ end)
                 TextColor3=t.fav and curThem.Tx or curThem.Mu,
                 Font=Enum.Font.GothamBold,TextSize=16,AutoButtonColor=false,
             },row)
-            corner(favBtn,8); mkStroke(favBtn,curThem.Ac,1.2,0.2)
-            reg(favBtn,"BackgroundColor3",curThem.Sa,false)
+corner(favBtn,8); mkStroke(favBtn,curThem.Ac,1.2,0.2)
+-- Tinanggal yung reg() para hindi mag-pulse/pumula nang sabay-sabay
 
             favBtn.Activated:Connect(function()
     t.fav = not t.fav
@@ -7482,8 +8073,8 @@ end)
                 BackgroundColor3=curThem.Da,BorderSizePixel=0,Text="×",
                 TextColor3=curThem.Tx,Font=Enum.Font.GothamBold,TextSize=18,AutoButtonColor=false,
             },row)
-            corner(delBtn,8); mkStroke(delBtn,curThem.Ac,1.2,0.2)
-            reg(delBtn,"BackgroundColor3",curThem.Da,false)
+corner(delBtn,8); mkStroke(delBtn,curThem.Ac,1.2,0.2)
+-- Tinanggal yung reg() para hindi mag-pulse/pumula nang sabay-sabay
 
             delBtn.Activated:Connect(function()
     -- Confirmation popup
@@ -7559,13 +8150,15 @@ end)
                     R.musicTimeLbl.Text = fmt(pos).." / "..fmt(dur)
                 end
 
-                if R.musicSound.IsPlaying then
-                    R.mBtnPlayPause.Text = "⏸ Pause"
-                elseif R.musicSound.IsPaused then
-                    R.mBtnPlayPause.Text = "▶ Play"
-                else
-                    R.mBtnPlayPause.Text = "▶ Play"
-                end
+if R.mBtnPlayPause and R.mBtnPlayPause.Parent then
+    if R.musicSound.IsPlaying then
+        R.mBtnPlayPause.Text = "⏸ Pause"
+    elseif R.musicSound.IsPaused then
+        R.mBtnPlayPause.Text = "▶ Play"
+    else
+        R.mBtnPlayPause.Text = "▶ Play"
+    end
+end
             end
             task.wait(0.2)
         end
@@ -8193,15 +8786,25 @@ do
     end)
 
     -- Responsive
-    local function resp()
-        local cam = workspace.CurrentCamera; if not cam then return end
-        local vp = cam.ViewportSize
-        Main.Size = UDim2.new(0,math.clamp(vp.X-30,cfg.MinW,cfg.W),0,math.clamp(vp.Y-50,cfg.MinH,cfg.H))
-        local cmp = vp.X < 780
-        Nav.Size = UDim2.new(0,cmp and 130 or 180,1,-112)
-        Cont.Position = UDim2.new(0,cmp and 156 or 208,0,98)
-        Cont.Size = UDim2.new(1,cmp and -170 or -222,1,-112)
+local function resp()
+    local cam = workspace.CurrentCamera; if not cam then return end
+    local vp = cam.ViewportSize
+    local cmp = vp.X < 780
+    
+    local targetW = math.clamp(vp.X-30,cfg.MinW,cfg.W)
+    local targetH = math.clamp(vp.Y-50,cfg.MinH,cfg.H)
+    
+    Nav.Size = UDim2.new(0,cmp and 130 or 180,1,-112)
+    Cont.Position = UDim2.new(0,cmp and 156 or 208,0,98)
+    Cont.Size = UDim2.new(1,cmp and -170 or -222,1,-112)
+    
+    S.expandedSize = UDim2.new(0, targetW, 0, targetH)
+    
+    -- ETO YUNG FIX: Hindi papakialaman ang size kung naka-hide.
+    if not S.min then
+        Main.Size = S.expandedSize
     end
+end
 
     if workspace.CurrentCamera then track(workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(resp)) end
 
@@ -8255,6 +8858,8 @@ S.suppressEnded = false
 
 function R.applyMusic()
     if not R.musicSound then return end
+    -- Cancel any pending un-suppress
+    S.suppressEnded = true
     local t = Settings.musicTracks[Settings.musicIndex]
     if not t or not t.id or t.id == "" then
         S.suppressEnded = true
@@ -8405,9 +9010,16 @@ if #(Settings.musicTracks or {}) > 0 then
         S.musicPlaying = true
     end)
 end
-    applyTheme(curName, true)
-    resp()
+applyTheme(curName, true)
+resp()
 
+-- Force refresh the list AGAIN after shuffle assigns the index
+if R.refreshMusicList then pcall(R.refreshMusicList) end
+
+-- Extra safety to ensure the render loop starts correctly
+task.delay(0.5, function()
+    if R.refreshMusicList then pcall(R.refreshMusicList) end
+end)
 
 -- Show Overview page WITHOUT triggering highlight
 for k,v in pairs(Pages) do v.Visible = (k=="Overview") end
@@ -8417,17 +9029,20 @@ for _,c in ipairs(NavS:GetChildren()) do
     end
 end
 
-    task.wait(cfg.Intro)
-    if LF and LF.Parent then
-        TS:Create(LF,TweenInfo.new(0.3),{BackgroundTransparency=1}):Play()
-        task.wait(0.3); LF:Destroy()
-    end
+-- Signal na tapos na i-load yung buong GUI. Mag-hihintay lang ng 0.3 seconds para mag-render yung 100%.
+guiLoaded = true 
+task.wait(0.3)
 
-    Main.Visible = true
-    TS:Create(MainSC,TweenInfo.new(0.4,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Scale = Settings.guiScale}):Play()
+if LF and LF.Parent then
+    TS:Create(LF,TweenInfo.new(0.3),{BackgroundTransparency=1}):Play()
+    task.wait(0.3); LF:Destroy()
+end
 
-    task.wait(0.6)
-    notify("Yinetsu [Remote Spy] loaded","success")
+Main.Visible = true
+TS:Create(MainSC,TweenInfo.new(0.4,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Scale = Settings.guiScale}):Play()
+
+task.wait(0.6)
+notify("Yinetsu [Remote Spy] loaded","success")
     print("[YINETSU] Loaded.")
 
     -- AUTO-RUN SCRIPT KAPAG NAG-LOAD ANG YINETSU
